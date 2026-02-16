@@ -5,11 +5,11 @@
 
     <groupId>com.example</groupId>
     <artifactId>RedPacketHunt</artifactId>
-    <version>1.21.11-RELEASE</version>
+    <version>2.0.0-RELEASE</version>
     <packaging>jar</packaging>
 
     <name>RedPacketHunt</name>
-    <description>适配1.21.11群骑纷争版本的红包插件</description>
+    <description>1.21 全服红包大乱斗 - 完整版</description>
 
     <properties>
         <java.version>21</java.version>
@@ -51,7 +51,6 @@
     </repositories>
 
     <dependencies>
-        <!-- 使用最新的 1.21.x API，通常兼容后续小版本如 1.21.11 -->
         <dependency>
             <groupId>org.spigotmc</groupId>
             <artifactId>spigot-api</artifactId>
