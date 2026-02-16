@@ -5,7 +5,7 @@ api-version: 1.21
 commands:
   rph:
     description: 全服找红包主命令
-    usage: /rph <start|setspawn|setduration>
+    usage: /rph <start|stop|setspawn|setduration>
     permission: rph.admin
 permissions:
   rph.admin:
