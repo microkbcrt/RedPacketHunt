@@ -674,31 +674,75 @@ public class RedPacketHunt extends JavaPlugin implements Listener, CommandExecut
                data.get(KEY_SPECIAL_ITEM, PersistentDataType.STRING).equals(id);
     }
 
-    // --- 计分板更新 ---
+    // --- 替换原有的 updateScoreboard 方法 ---
     private void updateScoreboard(long secondsLeft) {
         ScoreboardManager manager = Bukkit.getScoreboardManager();
         String timeStr = String.format("%02d:%02d", secondsLeft / 60, secondsLeft % 60);
 
         for (Player p : Bukkit.getOnlinePlayers()) {
             Scoreboard board = manager.getNewScoreboard();
-            Objective obj = board.registerNewObjective("RPH", Criteria.DUMMY, ChatColor.RED + "§l红包大乱斗");
+            Objective obj = board.registerNewObjective("RPH", Criteria.DUMMY, ChatColor.RED + "§l全服红包大乱斗");
             obj.setDisplaySlot(DisplaySlot.SIDEBAR);
 
-            int line = 15;
+            int line = 15; // 从第15行开始倒序排列
+
+            // --- 1. 基础信息 ---
             obj.getScore(ChatColor.YELLOW + "倒计时: " + ChatColor.WHITE + timeStr).setScore(line--);
-            obj.getScore("").setScore(line--);
-            
-            // 状态显示
+            obj.getScore(ChatColor.GRAY + "----------------").setScore(line--);
+
+            // --- 2. 状态显示 (禁飞倒计时) ---
             if (groundedPlayers.containsKey(p.getUniqueId())) {
                 long left = (groundedPlayers.get(p.getUniqueId()) - System.currentTimeMillis()) / 1000;
                 if (left > 0) {
-                    obj.getScore(ChatColor.RED + "禁飞剩余: " + left + "s").setScore(line--);
+                    obj.getScore(ChatColor.RED + "⚠ 禁飞剩余: " + ChatColor.BOLD + left + "s").setScore(line--);
                 }
             }
-            
-            obj.getScore("").setScore(line--);
-            obj.getScore(ChatColor.GOLD + "存活玩家: " + Bukkit.getOnlinePlayers().size()).setScore(line--);
-            obj.getScore(ChatColor.AQUA + "当前空投数: " + activeAirdrops.size()).setScore(line--);
+
+            // --- 3. 最近的5个箱子逻辑 ---
+            // 过滤出有效的箱子列表（必须在同一个世界且方块仍然是箱子）
+            List<Location> validChests = new ArrayList<>();
+            for (Location loc : allGameChests) {
+                if (loc.getWorld().equals(p.getWorld()) && loc.getBlock().getType() == Material.CHEST) {
+                    validChests.add(loc);
+                }
+            }
+
+            // 根据距离玩家的远近进行排序 (近 -> 远)
+            validChests.sort((c1, c2) -> Double.compare(c1.distanceSquared(p.getLocation()), c2.distanceSquared(p.getLocation())));
+
+            if (!validChests.isEmpty()) {
+                obj.getScore(ChatColor.GOLD + ">> 最近物资坐标 <<").setScore(line--);
+                
+                // 取前5个 (或者少于5个时的全部)
+                int count = 0;
+                for (Location loc : validChests) {
+                    if (count >= 5 || line <= 0) break;
+
+                    int dist = (int) loc.distance(p.getLocation());
+                    
+                    // 格式：X:100 Y:64 Z:100 (50m)
+                    // 使用不同的颜色区分坐标和距离
+                    String coordStr = String.format("x%d y%d z%d", loc.getBlockX(), loc.getBlockY(), loc.getBlockZ());
+                    
+                    // 为了防止计分板因为字符串重复而不显示，我们在字符串末尾加个肉眼不可见的颜色代码或者依靠距离区分
+                    // Spigot 1.21 通常可以处理重复内容，但为了保险，组合唯一的字符串
+                    String entry = ChatColor.AQUA + coordStr + ChatColor.YELLOW + " (" + dist + "m)";
+                    
+                    // 检查是否是空投 (可选：如果是空投，用紫色显示)
+                    if (activeAirdrops.contains(loc)) {
+                        entry = ChatColor.LIGHT_PURPLE + coordStr + ChatColor.GOLD + " (空投)";
+                    }
+
+                    obj.getScore(entry).setScore(line--);
+                    count++;
+                }
+            } else {
+                obj.getScore(ChatColor.GRAY + "暂无探测到物资...").setScore(line--);
+            }
+
+            // --- 4. 底部信息 ---
+            if (line > 0) obj.getScore(" ").setScore(line--); // 空行
+            if (line > 0) obj.getScore(ChatColor.GREEN + "存活玩家: " + Bukkit.getOnlinePlayers().size()).setScore(line--);
 
             p.setScoreboard(board);
         }
