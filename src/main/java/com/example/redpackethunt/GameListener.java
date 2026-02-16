@@ -84,11 +84,15 @@ public class GameListener implements Listener {
             return stick;
         }
         // 击坠弓 (15%)
-        if (roll < 80) {
+        if (roll < 80) { // 这里原本的概率判断保持不变
             ItemStack bow = new ItemStack(Material.BOW);
             ItemMeta meta = bow.getItemMeta();
             meta.setDisplayName(ChatColor.RED + "击坠弓");
             meta.setLore(Collections.singletonList(ChatColor.GRAY + "射中飞行玩家使其坠落"));
+            
+            // --- [新增] 添加无限附魔 ---
+            meta.addEnchant(Enchantment.INFINITY, 1, true);
+            
             bow.setItemMeta(meta);
             return bow;
         }
