@@ -1,13 +1,13 @@
 name: RedPacketHunt
-version: 1.21.11
+version: 2.0.0
 main: com.example.redpackethunt.RedPacketHunt
 api-version: 1.21
 commands:
   rph:
-    description: 全服找红包主命令
+    description: 游戏主命令
     usage: /rph <start|stop|setspawn|setduration>
     permission: rph.admin
 permissions:
   rph.admin:
-    description: 允许管理红包活动
+    description: 管理员权限
     default: op
