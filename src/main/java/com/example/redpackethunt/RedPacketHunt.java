@@ -10,10 +10,10 @@ import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.*;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action; // [修复] 添加了缺少的 Action 导入
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.entity.*;
 import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.event.player.*;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
@@ -28,7 +28,6 @@ import org.bukkit.potion.PotionEffectType;
 import org.bukkit.potion.PotionType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scoreboard.*;
-import org.bukkit.util.Vector;
 
 import java.util.*;
 
@@ -46,7 +45,7 @@ public class RedPacketHunt extends JavaPlugin implements Listener, CommandExecut
     private final Map<UUID, Integer> openingTasks = new HashMap<>();
     // 记录空投位置以便播放特效
     private final List<Location> activeAirdrops = new ArrayList<>();
-    // 记录所有游戏生成的箱子位置（用于清理）
+    // 记录所有游戏生成的箱子位置（用于清理和计分板显示）
     private final List<Location> allGameChests = new ArrayList<>();
 
     // NamespacedKeys 用于识别特殊物品和箱子类型
@@ -57,7 +56,7 @@ public class RedPacketHunt extends JavaPlugin implements Listener, CommandExecut
     public void onEnable() {
         getCommand("rph").setExecutor(this);
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("RedPacketHunt 2.0 (1.21.11适配版) 已加载！");
+        getLogger().info("RedPacketHunt 2.0 (1.21 修复版) 已加载！");
         
         // 全局循环：处理空投特效和飞行封禁过期
         new BukkitRunnable() {
@@ -207,7 +206,6 @@ public class RedPacketHunt extends JavaPlugin implements Listener, CommandExecut
 
         if (!force) {
             Bukkit.broadcastMessage(ChatColor.GOLD + "游戏结束！");
-            // 这里可以添加结算逻辑
         }
         
         for (Player p : Bukkit.getOnlinePlayers()) {
@@ -284,9 +282,6 @@ public class RedPacketHunt extends JavaPlugin implements Listener, CommandExecut
         Random r = new Random();
         int itemsCount = isAirdrop ? r.nextInt(5) + 5 : r.nextInt(3) + 2;
 
-        // 1. 必有：红包（计分道具，这里简化为红染料，具体计分逻辑可参考上一版）
-        // 这里重点实现新的PVP道具
-        
         List<ItemStack> pool = new ArrayList<>();
         
         // 基础物资
@@ -328,7 +323,7 @@ public class RedPacketHunt extends JavaPlugin implements Listener, CommandExecut
         
         switch (type) {
             case "ice_snowball":
-                item = new ItemStack(Material.SNOWBALL, 1); // 刷新3-5个逻辑在Loot生成时控制数量即可
+                item = new ItemStack(Material.SNOWBALL, 1);
                 meta = item.getItemMeta();
                 meta.setDisplayName(ChatColor.AQUA + "冰冻雪球");
                 meta.setLore(Arrays.asList(ChatColor.GRAY + "击中给予5秒缓慢+失明"));
@@ -498,14 +493,6 @@ public class RedPacketHunt extends JavaPlugin implements Listener, CommandExecut
             allGameChests.add(deathLoc);
         }
         
-        // 死者重置状态
-        // 注意：PlayerDeathEvent 中 setKeepInventory 已经保留了物品，
-        // 这里需要再次清理死者背包，因为题目要求"被击杀者的道具不会减少"意味着复活后还有。
-        // 但通常逻辑是：死了不掉落=复活背包里还有。
-        // 而"尸体位置掉落一个红包...里面放着被击杀者的道具"意味着**复制**了一份。
-        // 所以这里不需要做额外操作，Spigot 的 KeepInventory 会让玩家复活带着装备，
-        // 而我们手动创建的箱子也有一份装备。
-        
         p.sendMessage(ChatColor.RED + "你死了！你的物资被复制并留在了原地。");
     }
 
@@ -556,7 +543,6 @@ public class RedPacketHunt extends JavaPlugin implements Listener, CommandExecut
             SkullMeta meta = (SkullMeta) head.getItemMeta();
             meta.setOwningPlayer(target);
             meta.setDisplayName(ChatColor.YELLOW + target.getName());
-            // 隐藏数据在 Lore 或 NBT，这里直接用名字
             head.setItemMeta(meta);
             gui.addItem(head);
         }
@@ -632,11 +618,6 @@ public class RedPacketHunt extends JavaPlugin implements Listener, CommandExecut
         
         // 冰冻雪球
         if (proj instanceof Snowball && proj.getShooter() instanceof Player) {
-            // 这里Snowball本身不带NBT，需要在发射时标记或者简单粗暴判定所有雪球
-            // 为了严谨，建议在ProjectileLaunchEvent里传递Metadata，这里简化为所有雪球生效
-            // 或者：因为题目说“冰冻雪球”是特殊道具，我们可以假设只有这个道具发射的雪球才有效
-            // 但ProjectileHitEvent很难追溯ItemMeta。
-            // 简化方案：游戏中雪球默认都带此效果（因为生存模式雪球没啥用）
             target.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 5*20, 2));
             target.addPotionEffect(new PotionEffect(PotionEffectType.BLINDNESS, 5*20, 1));
             target.sendMessage(ChatColor.AQUA + "你被冰冻了！");
@@ -674,7 +655,7 @@ public class RedPacketHunt extends JavaPlugin implements Listener, CommandExecut
                data.get(KEY_SPECIAL_ITEM, PersistentDataType.STRING).equals(id);
     }
 
-    // --- 替换原有的 updateScoreboard 方法 ---
+    // --- 计分板更新 (显示最近的5个箱子) ---
     private void updateScoreboard(long secondsLeft) {
         ScoreboardManager manager = Bukkit.getScoreboardManager();
         String timeStr = String.format("%02d:%02d", secondsLeft / 60, secondsLeft % 60);
@@ -720,15 +701,13 @@ public class RedPacketHunt extends JavaPlugin implements Listener, CommandExecut
 
                     int dist = (int) loc.distance(p.getLocation());
                     
-                    // 格式：X:100 Y:64 Z:100 (50m)
-                    // 使用不同的颜色区分坐标和距离
+                    // 格式：x100 y64 z100 (50m)
                     String coordStr = String.format("x%d y%d z%d", loc.getBlockX(), loc.getBlockY(), loc.getBlockZ());
                     
-                    // 为了防止计分板因为字符串重复而不显示，我们在字符串末尾加个肉眼不可见的颜色代码或者依靠距离区分
-                    // Spigot 1.21 通常可以处理重复内容，但为了保险，组合唯一的字符串
+                    // 默认显示颜色
                     String entry = ChatColor.AQUA + coordStr + ChatColor.YELLOW + " (" + dist + "m)";
                     
-                    // 检查是否是空投 (可选：如果是空投，用紫色显示)
+                    // 检查是否是空投 (如果是空投，用紫色显示)
                     if (activeAirdrops.contains(loc)) {
                         entry = ChatColor.LIGHT_PURPLE + coordStr + ChatColor.GOLD + " (空投)";
                     }
