@@ -179,6 +179,8 @@ public class RedPacketHunt extends JavaPlugin implements Listener, CommandExecut
         p.getInventory().setChestplate(elytra);
         // 初始给16个火箭
         p.getInventory().setItemInMainHand(new ItemStack(Material.FIREWORK_ROCKET, 16));
+        // 新增：给予一支箭，否则无限附魔的弓无法射击
+        p.getInventory().setItem(9, new ItemStack(Material.ARROW, 1)); 
     }
 
     private void startMainPhase() {
@@ -421,11 +423,12 @@ public class RedPacketHunt extends JavaPlugin implements Listener, CommandExecut
         locs.clear();
     }
 
-    // --- 计分板更新 ---
-    
     private void updateAllScoreboards(long secondsLeft) {
         ScoreboardManager manager = Bukkit.getScoreboardManager();
         String timeStr = String.format("%02d:%02d", secondsLeft / 60, secondsLeft % 60);
+
+        // 预先计算是否所有普通箱子已被收集
+        boolean allChestsFound = activeChests.isEmpty();
 
         for (Player p : Bukkit.getOnlinePlayers()) {
             Scoreboard board = manager.getNewScoreboard();
@@ -435,32 +438,70 @@ public class RedPacketHunt extends JavaPlugin implements Listener, CommandExecut
             List<String> lines = new ArrayList<>();
             lines.add(ChatColor.YELLOW + "倒计时: " + ChatColor.WHITE + timeStr);
             lines.add(ChatColor.GREEN + "我的红包: " + ChatColor.WHITE + scores.getOrDefault(p.getUniqueId(), 0));
-            lines.add(ChatColor.GRAY + "----------------");
             
-            // 空投显示
-            if (!activeAirdrops.isEmpty()) {
-                lines.add(ChatColor.GOLD + ">> 空投坐标 <<");
-                for (Location loc : activeAirdrops) {
-                    lines.add(String.format("X:%d Y:%d Z:%d", loc.getBlockX(), loc.getBlockY(), loc.getBlockZ()));
-                }
-                lines.add(ChatColor.GRAY + " ");
-            }
+            // --- [新增] 显示当前玩家坐标 ---
+            Location pl = p.getLocation();
+            lines.add(ChatColor.WHITE + String.format("当前: %d, %d, %d", pl.getBlockX(), pl.getBlockY(), pl.getBlockZ()));
+            
+            lines.add(ChatColor.GRAY + "----------------");
 
-            // 最近5个箱子
-            lines.add(ChatColor.GOLD + "最近箱子:");
-            List<Location> nearest = getNearestChests(p.getLocation(), 5);
-            if (nearest.isEmpty()) {
-                lines.add(ChatColor.GRAY + "附近没有箱子...");
+            // --- [修改] 核心逻辑：箱子找完后的处理 ---
+            if (allChestsFound) {
+                // 1. 给予发光效果 (持续3秒，循环刷新，保持常亮)
+                p.addPotionEffect(new PotionEffect(PotionEffectType.GLOWING, 60, 0, false, false));
+                
+                // 2. 侧边栏显示最近的玩家
+                lines.add(ChatColor.RED + "§l[决战时刻]");
+                lines.add(ChatColor.GOLD + "所有箱子已找完!");
+                lines.add(ChatColor.GOLD + "全员发光中...");
+                
+                Player nearest = null;
+                double minDistance = Double.MAX_VALUE;
+                
+                for (Player target : Bukkit.getOnlinePlayers()) {
+                    if (target.equals(p) || target.getWorld() != p.getWorld()) continue;
+                    double dist = target.getLocation().distance(p.getLocation());
+                    if (dist < minDistance) {
+                        minDistance = dist;
+                        nearest = target;
+                    }
+                }
+                
+                if (nearest != null) {
+                    lines.add(ChatColor.AQUA + "最近敌人: " + ChatColor.WHITE + nearest.getName());
+                    lines.add(ChatColor.AQUA + "距离: " + ChatColor.WHITE + String.format("%.1fm", minDistance));
+                } else {
+                    lines.add(ChatColor.GRAY + "附近暂无敌人");
+                }
+
             } else {
-                for (Location loc : nearest) {
-                    lines.add(ChatColor.AQUA + String.format("%d, %d, %d", loc.getBlockX(), loc.getBlockY(), loc.getBlockZ()));
+                // --- 原有逻辑：显示剩余箱子 ---
+                
+                // 空投显示 (保持不变)
+                if (!activeAirdrops.isEmpty()) {
+                    lines.add(ChatColor.GOLD + ">> 空投坐标 <<");
+                    for (Location loc : activeAirdrops) {
+                        lines.add(String.format("X:%d Y:%d Z:%d", loc.getBlockX(), loc.getBlockY(), loc.getBlockZ()));
+                    }
+                    lines.add(ChatColor.GRAY + " ");
+                }
+
+                // 最近箱子显示 (保持不变)
+                lines.add(ChatColor.GOLD + "最近箱子:");
+                List<Location> nearestChests = getNearestChests(p.getLocation(), 5);
+                if (nearestChests.isEmpty()) {
+                    lines.add(ChatColor.GRAY + "附近没有箱子...");
+                } else {
+                    for (Location loc : nearestChests) {
+                        lines.add(ChatColor.AQUA + String.format("%d, %d, %d", loc.getBlockX(), loc.getBlockY(), loc.getBlockZ()));
+                    }
                 }
             }
 
+            // 渲染到计分板
             int scoreIdx = 15;
             for (String line : lines) {
                 if (scoreIdx <= 0) break;
-                // 防止重复Score导致的覆盖，添加不可见颜色代码后缀
                 if (obj.getScore(line).isScoreSet()) {
                     line = line + ChatColor.RESET;
                 }
