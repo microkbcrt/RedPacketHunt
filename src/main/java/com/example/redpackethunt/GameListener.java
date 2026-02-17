@@ -57,16 +57,39 @@ public class GameListener implements Listener {
         return item;
     }
 
+// --- [修改] 特殊物品生成：加入新道具 ---
     public static ItemStack getRandomSpecialItem(boolean isAirdrop) {
         Random r = new Random();
         int roll = r.nextInt(100);
 
-        // 药水 (30%)
-        if (roll < 30) {
+        // 1. 喷溅药水 (20%)
+        if (roll < 20) {
             return getRandomPotion();
         }
-        // 冰冻雪球 (20%)
+        // 2. 金苹果 (15%) - [新增]
+        if (roll < 35) {
+            return new ItemStack(Material.GOLDEN_APPLE, r.nextInt(2) + 1);
+        }
+        // 3. 火焰弹 (15%) - [新增]
         if (roll < 50) {
+            ItemStack fire = new ItemStack(Material.FIRE_CHARGE, r.nextInt(3) + 1);
+            ItemMeta meta = fire.getItemMeta();
+            meta.setDisplayName(ChatColor.RED + "烈焰火球");
+            meta.setLore(Collections.singletonList(ChatColor.GRAY + "右键发射爆炸火球！"));
+            fire.setItemMeta(meta);
+            return fire;
+        }
+        // 4. 末影水晶 (5%) - [新增]
+        if (roll < 55) {
+            ItemStack crystal = new ItemStack(Material.END_CRYSTAL);
+            ItemMeta meta = crystal.getItemMeta();
+            meta.setDisplayName(ChatColor.LIGHT_PURPLE + "危险的水晶");
+            meta.setLore(Collections.singletonList(ChatColor.GRAY + "放置后极易爆炸"));
+            crystal.setItemMeta(meta);
+            return crystal;
+        }
+        // 5. 冰冻雪球 (15%)
+        if (roll < 70) {
             ItemStack ball = new ItemStack(Material.SNOWBALL, r.nextInt(3) + 1);
             ItemMeta meta = ball.getItemMeta();
             meta.setDisplayName(ChatColor.AQUA + "冰冻雪球");
@@ -74,8 +97,8 @@ public class GameListener implements Listener {
             ball.setItemMeta(meta);
             return ball;
         }
-        // 击退棒 (15%)
-        if (roll < 65) {
+        // 6. 击退棒 (10%)
+        if (roll < 80) {
             ItemStack stick = new ItemStack(Material.STICK);
             ItemMeta meta = stick.getItemMeta();
             meta.setDisplayName(ChatColor.GOLD + "快乐击退棒");
@@ -83,30 +106,26 @@ public class GameListener implements Listener {
             stick.setItemMeta(meta);
             return stick;
         }
-        // 击坠弓 (15%)
-        if (roll < 80) { // 这里原本的概率判断保持不变
+        // 7. 击坠弓 (10%)
+        if (roll < 90) {
             ItemStack bow = new ItemStack(Material.BOW);
             ItemMeta meta = bow.getItemMeta();
             meta.setDisplayName(ChatColor.RED + "击坠弓");
             meta.setLore(Collections.singletonList(ChatColor.GRAY + "射中飞行玩家使其坠落"));
-            
-            // --- [新增] 添加无限附魔 ---
             meta.addEnchant(Enchantment.INFINITY, 1, true);
-            
             bow.setItemMeta(meta);
             return bow;
         }
-        // 稀有物品: 换位钟 (10%)
-        if (roll < 90) {
+        // 8. 稀有物品: 换位钟 (5%)
+        if (roll < 95) {
             ItemStack clock = new ItemStack(Material.CLOCK);
             ItemMeta meta = clock.getItemMeta();
             meta.setDisplayName(ChatColor.LIGHT_PURPLE + "换位怀表");
             meta.setLore(Collections.singletonList(ChatColor.GRAY + "右键选择玩家交换位置"));
-            // 标记NBT方便识别
             clock.setItemMeta(meta); 
             return clock;
         }
-        // 稀有物品: 诅咒烈焰棒 (10%)
+        // 9. 稀有物品: 诅咒烈焰棒 (5%)
         ItemStack rod = new ItemStack(Material.BLAZE_ROD);
         ItemMeta meta = rod.getItemMeta();
         meta.setDisplayName(ChatColor.DARK_RED + "诅咒法杖");
@@ -116,20 +135,21 @@ public class GameListener implements Listener {
     }
 
     private static ItemStack getRandomPotion() {
-        Material[] pots = {Material.SPLASH_POTION, Material.LINGERING_POTION};
-        ItemStack pot = new ItemStack(pots[new Random().nextInt(pots.length)]);
+        // 强制使用喷溅药水
+        ItemStack pot = new ItemStack(Material.SPLASH_POTION);
         PotionMeta pm = (PotionMeta) pot.getItemMeta();
         
         PotionEffectType[] types = {
             PotionEffectType.SPEED, PotionEffectType.SLOWNESS, PotionEffectType.POISON,
             PotionEffectType.JUMP_BOOST, PotionEffectType.DARKNESS, PotionEffectType.BLINDNESS,
             PotionEffectType.NAUSEA, PotionEffectType.WEAKNESS, PotionEffectType.STRENGTH,
-            PotionEffectType.REGENERATION
+            PotionEffectType.REGENERATION, PotionEffectType.INSTANT_DAMAGE, PotionEffectType.INSTANT_HEALTH
         };
         
         PotionEffectType type = types[new Random().nextInt(types.length)];
+        // 持续时间改为 10-20秒左右 (20tick * 秒数)
         pm.addCustomEffect(new PotionEffect(type, 20 * 15, 1), true);
-        pm.setDisplayName(ChatColor.BLUE + "随机药水");
+        pm.setDisplayName(ChatColor.BLUE + "随机喷溅药水");
         pot.setItemMeta(pm);
         return pot;
     }
@@ -140,6 +160,27 @@ public class GameListener implements Listener {
     public void onInteract(PlayerInteractEvent e) {
         if (!plugin.isGameRunning) return;
         Player p = e.getPlayer();
+
+        // --- [新增] 火焰弹发射逻辑 ---
+        if (e.getAction() == Action.RIGHT_CLICK_AIR || e.getAction() == Action.RIGHT_CLICK_BLOCK) {
+            ItemStack item = e.getItem();
+            if (item != null && item.getType() == Material.FIRE_CHARGE) {
+                e.setCancelled(true); // 阻止原版点火行为
+                
+                // 发射火球 (LargeFireball 是恶魂火球，SmallFireball 是烈焰人火球)
+                // 这里使用 LargeFireball 以获得爆炸效果
+                LargeFireball fireball = p.launchProjectile(LargeFireball.class);
+                fireball.setYield(2); // 设置爆炸威力 (2 = 普通苦力怕大小)
+                fireball.setIsIncendiary(true); // 是否点燃方块
+                
+                // 播放音效
+                p.playSound(p.getLocation(), Sound.ENTITY_GHAST_SHOOT, 1f, 1f);
+                
+                // 消耗物品
+                item.setAmount(item.getAmount() - 1);
+                return;
+            }
+        }
         
         // 1. 处理特殊物品右键逻辑
         if (e.getAction() == Action.RIGHT_CLICK_AIR || e.getAction() == Action.RIGHT_CLICK_BLOCK) {
@@ -167,6 +208,18 @@ public class GameListener implements Listener {
             boolean isGameChest = isLocationInList(loc, plugin.activeChests);
             boolean isAirdrop = isLocationInList(loc, plugin.activeAirdrops);
 
+            // [新增] 检查是否是死亡箱
+            boolean isDeathChest = plugin.activeDeathChests.containsKey(loc);
+    
+            // [新增] 如果是死亡箱，检查是否是本人
+            if (isDeathChest) {
+                UUID victimUUID = plugin.activeDeathChests.get(loc);
+                if (p.getUniqueId().equals(victimUUID)) {
+                    e.setCancelled(true);
+                    p.sendMessage(ChatColor.RED + "你无法打开自己的遗物箱子！只有别人能舔你的包！");
+                    return;
+                }
+            }
             // 如果是游戏生成的箱子（非死亡掉落箱），则需要读条
             if (isGameChest || isAirdrop) {
                 e.setCancelled(true); // 阻止直接打开
@@ -270,8 +323,13 @@ public class GameListener implements Listener {
                 removeFromList(loc, plugin.activeChests);
                 removeFromList(loc, plugin.activeAirdrops);
                 
-                // 视觉效果：如果拿完红包，箱子可以消失，或者保留让别人抢其他道具
-                // 这里设定为红包拿走后，箱子作为普通容器保留，直到游戏结束清理，但从计分板移除
+                // [新增] 如果是死亡箱，从Map中移除（移除后计分板不再显示）
+                // 注意：Location作为Map Key需要精确匹配，建议使用 block location
+                if (plugin.activeDeathChests.containsKey(loc)) {
+                    plugin.activeDeathChests.remove(loc);
+                    // 也可以选择把箱子变空气，或者留着当空箱子
+                    // loc.getBlock().setType(Material.AIR); 
+                }
             }
         }
     }
@@ -419,30 +477,31 @@ public class GameListener implements Listener {
             Chest chest = (Chest) loc.getBlock().getState();
             Inventory inv = chest.getInventory();
             
-            // 放入 "尸体红包" 
-            // 随机复制死者身上的3-5样物品放进去
+            // [新增] 注册到死亡箱列表
+            plugin.activeDeathChests.put(loc, victim.getUniqueId());
+            
+            // [新增] 全服广播
+            String coord = String.format("X:%d Y:%d Z:%d", loc.getBlockX(), loc.getBlockY(), loc.getBlockZ());
+            Bukkit.broadcastMessage(ChatColor.RED + "☠ " + ChatColor.YELLOW + victim.getName() + 
+                                    ChatColor.RED + " 阵亡！遗物坐标: " + ChatColor.GOLD + coord);
+            
+            // --- 放入物品逻辑 (保持原样或微调) ---
             Inventory victimInv = victim.getInventory();
             int itemsAdded = 0;
-            for (ItemStack item : victimInv.getContents()) {
-                if (item != null && item.getType() != Material.AIR && item.getType() != Material.ELYTRA) {
+            for (ItemStack i : victimInv.getContents()) {
+                if (i != null && i.getType() != Material.AIR && i.getType() != Material.ELYTRA) {
                     if (random.nextBoolean()) {
-                        inv.addItem(item.clone()); // 复制一份放入箱子
+                        inv.addItem(i.clone()); 
                         itemsAdded++;
                     }
                 }
                 if (itemsAdded >= 5) break;
             }
             
-            // 如果死者身上有红包分数，是否掉落？题目说“不掉落道具”，没说扣分。
-            // 题目只说“尸体位置掉落一个物理形式的红包物品（箱子）”
-            // 我们可以在箱子里放一个特殊的改名物品叫 "死者的遗物"
-            ItemStack loot = new ItemStack(Material.PAPER);
-            ItemMeta meta = loot.getItemMeta();
-            meta.setDisplayName(ChatColor.RED + victim.getName() + " 的遗物");
-            loot.setItemMeta(meta);
-            inv.addItem(loot);
+            // 放入红包 (作为核心道具，拿走后箱子逻辑失效)
+            inv.addItem(GameListener.getRedPacketItem());
             
-            victim.sendMessage(ChatColor.GRAY + "你死后在原地留下了一个补给箱。");
+            victim.sendMessage(ChatColor.GRAY + "你死后留下了一个补给箱，坐标已全服广播。自己无法开启！");
         }
     }
     
