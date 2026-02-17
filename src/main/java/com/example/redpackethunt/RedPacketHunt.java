@@ -38,6 +38,7 @@ public class RedPacketHunt extends JavaPlugin implements Listener, CommandExecut
     public final Map<UUID, Integer> scores = new HashMap<>();
     public final List<Location> activeChests = new ArrayList<>(); // 普通红包箱
     public final List<Location> activeAirdrops = new ArrayList<>(); // 空投箱
+    public final Map<Location, UUID> activeDeathChests = new HashMap<>();  // [新增] 存储死亡箱子 <箱子位置, 死者UUID>
     
     // --- 特殊状态管理 ---
     public final Map<UUID, Long> noFlyList = new HashMap<>(); // 禁飞名单 <玩家, 过期时间戳>
@@ -123,6 +124,7 @@ public class RedPacketHunt extends JavaPlugin implements Listener, CommandExecut
         scores.clear();
         activeChests.clear();
         activeAirdrops.clear();
+        activeDeathChests.clear();
         noFlyList.clear();
         openingTasks.clear();
 
@@ -408,6 +410,9 @@ public class RedPacketHunt extends JavaPlugin implements Listener, CommandExecut
         if (force) {
             cleanupBlocks(activeChests);
             cleanupBlocks(activeAirdrops);
+            // [新增] 清理死亡箱子
+            cleanupBlocks(new ArrayList<>(activeDeathChests.keySet()));
+            activeDeathChests.clear();
             openingTasks.values().forEach(BukkitTask::cancel);
             openingTasks.clear();
             for(Player p : Bukkit.getOnlinePlayers()) {
@@ -476,7 +481,22 @@ public class RedPacketHunt extends JavaPlugin implements Listener, CommandExecut
 
             } else {
                 // --- 原有逻辑：显示剩余箱子 ---
-                
+                // [新增] 死亡补给箱显示
+                if (!activeDeathChests.isEmpty()) {
+                    lines.add(ChatColor.DARK_RED + ">> 玩家遗物 <<");
+                    int count = 0;
+                    for (Map.Entry<Location, UUID> entry : activeDeathChests.entrySet()) {
+                        if (count >= 3) break; // 最多显示3个，防止刷屏
+                        Location loc = entry.getKey();
+                        // 显示死者名字（如果离线则显示Unknown）
+                        String victimName = Bukkit.getOfflinePlayer(entry.getValue()).getName();
+                        if (victimName == null) victimName = "未知";
+                        
+                        lines.add(ChatColor.RED + victimName + ": " + 
+                                  ChatColor.WHITE + loc.getBlockX() + ", " + loc.getBlockY() + ", " + loc.getBlockZ());
+                        count++;
+                    }
+                }
                 // 空投显示 (保持不变)
                 if (!activeAirdrops.isEmpty()) {
                     lines.add(ChatColor.GOLD + ">> 空投坐标 <<");
